@@ -225,12 +225,6 @@ export default function TodayScreen() {
     setEditModalVisible(false);
   };
 
-  const totalMin = records.reduce((s, r) => s + r.minutes, 0);
-  const totalHrs = (totalMin / 60).toFixed(1);
-
-  console.log("Timeline height:", TIMELINE_HEIGHT);
-  console.log("Records count:", records.length);
-
   return (
     <>
       {/* Header */}
@@ -279,7 +273,15 @@ export default function TodayScreen() {
             const height = r.minutes * MINUTE_HEIGHT;
             const isResizing = resizingRecord === r.id;
             const category = categories.find((c) => c.id === r.categoryId);
-            const categoryColor = category?.colorHex || "#a0c4ff";
+            const baseColor = category?.colorHex || "#a0c4ff";
+            // Convert hex to rgba with 50% opacity
+            const hexToRgba = (hex: string, opacity: number) => {
+              const r = parseInt(hex.slice(1, 3), 16);
+              const g = parseInt(hex.slice(3, 5), 16);
+              const b = parseInt(hex.slice(5, 7), 16);
+              return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+            };
+            const categoryColor = hexToRgba(baseColor, 0.5);
             console.log(
               `Record ${
                 r.id
@@ -293,7 +295,7 @@ export default function TodayScreen() {
                   {
                     top,
                     height,
-                    minHeight: 30,
+                    minHeight: 44,
                     backgroundColor: categoryColor,
                   },
                   isResizing && styles.eventBoxResizing,
@@ -652,7 +654,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: 1,
-    backgroundColor: "#ccc",
+    backgroundColor: "transparent",
   },
 
   eventBox: {
@@ -662,13 +664,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#a0c4ff",
     borderRadius: 8,
     padding: 6,
-    borderWidth: 1,
-    borderColor: "#7fb3ff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
   },
   eventBoxResizing: {
     borderColor: "#ff0000",
@@ -679,11 +674,11 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  eventTitle: { fontWeight: "600", color: "#003d82" },
-  eventDuration: { fontSize: 12, color: "#0056b3" },
+  eventTitle: { fontWeight: "600", color: "#000000", fontSize: 16 },
+  eventDuration: { fontSize: 14, color: "#000000" },
   eventCategory: {
-    fontSize: 10,
-    color: "#555",
+    fontSize: 14,
+    color: "#000000",
     marginTop: 2,
   },
 
@@ -793,6 +788,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.2)",
     borderRadius: 3,
     marginHorizontal: 10,
+    zIndex: 1,
   },
   topHandle: {
     top: 2,
@@ -802,10 +798,12 @@ const styles = StyleSheet.create({
   },
   eventContent: {
     flex: 1,
-    justifyContent: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 8,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingVertical: 4,
+    zIndex: 2, // Ensure text is above any handles
   },
   resizeControls: {
     position: "absolute",

@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import React, { memo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Category, RecordItem } from "../../app/(tabs)/today"; // Adjust this import path as needed
+import { Category, RecordItem } from "../../app/(tabs)/today";
 
 const HOUR_HEIGHT = 60;
 const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
@@ -13,6 +13,7 @@ interface TimelineProps {
   onEditRecord: (record: RecordItem) => void;
   onLongPressRecord: (recordId: number) => void;
   resizingRecord: number | null;
+  hexToRgba: (hex: string, alpha: number) => string;
 }
 
 const Timeline: React.FC<TimelineProps> = ({
@@ -21,6 +22,7 @@ const Timeline: React.FC<TimelineProps> = ({
   onEditRecord,
   onLongPressRecord,
   resizingRecord,
+  hexToRgba,
 }) => {
   return (
     <ScrollView style={styles.scrollView}>
@@ -107,6 +109,18 @@ const styles = StyleSheet.create({
   eventBoxResizing: {
     borderColor: "#ff0000",
     borderWidth: 2,
+  },
+  eventTitle: {
+    fontWeight: "600",
+    color: "#003d82",
+  },
+  eventCategory: {
+    fontSize: 12,
+    color: "#555",
+  },
+  eventDuration: {
+    fontSize: 12,
+    color: "#333",
   },
 });
 

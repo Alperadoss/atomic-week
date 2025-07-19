@@ -285,12 +285,6 @@ export default function WeekScreen() {
         {/* Scrollable Content - both vertical and horizontal */}
         <ScrollView style={styles.scrollView} horizontal={false}>
           <View style={styles.weekContentWrapper}>
-            {/* Header Row with spacer for time column */}
-            <View style={styles.headerRow}>
-              <View style={styles.timeHeaderSpacer} />
-              {/* Day headers will be part of the main horizontal scroll */}
-            </View>
-
             {/* Time and Days Content Row */}
             <View style={styles.contentRow}>
               {/* Fixed Time Column - scrolls vertically but not horizontally */}
@@ -392,8 +386,18 @@ export default function WeekScreen() {
                             const category = categories.find(
                               (c) => c.id === record.categoryId
                             );
-                            const categoryColor =
-                              category?.colorHex || "#a0c4ff";
+                            const baseColor = category?.colorHex || "#a0c4ff";
+                            // Convert hex to rgba with 50% opacity
+                            const hexToRgba = (
+                              hex: string,
+                              opacity: number
+                            ) => {
+                              const r = parseInt(hex.slice(1, 3), 16);
+                              const g = parseInt(hex.slice(3, 5), 16);
+                              const b = parseInt(hex.slice(5, 7), 16);
+                              return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                            };
+                            const categoryColor = hexToRgba(baseColor, 0.5);
 
                             return (
                               <Pressable
@@ -736,13 +740,13 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0, 0, 0, 0.1)",
   },
   recordTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#333",
+    color: "#000000",
   },
   recordTime: {
     fontSize: 8,
-    color: "#666",
+    color: "#000000",
     marginTop: 1,
   },
   modalOverlay: {
@@ -882,13 +886,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0f0f0",
     borderRightWidth: 1,
     borderRightColor: "#ddd",
-  },
-  timeHeaderSpacer: {
-    width: TIME_COLUMN_WIDTH,
-    height: 50, // Space for the header text
-    backgroundColor: "#f0f0f0",
-    borderRightWidth: 1,
-    borderRightColor: "#ddd",
+    paddingTop: 50, // Match day header height so 00:00 aligns correctly
   },
   weekContentWrapper: {
     flex: 1,
@@ -905,6 +903,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   daysContentWithHeaders: {
+    paddingTop: 6,
     flexDirection: "row",
   },
   completeDayColumn: {
@@ -917,5 +916,6 @@ const styles = StyleSheet.create({
     borderBottomColor: "#ddd",
     paddingVertical: 8,
     alignItems: "center",
+    height: 50, // Fixed height so time column can offset accordingly
   },
 });
