@@ -82,7 +82,7 @@ export default function TodayScreen() {
   const [showEditFinishPicker, setShowEditFinishPicker] = useState(false);
 
   // OPTIMIZED: Use custom hook for current time with minimal re-renders
-  const currentTime = useCurrentTime(3); // 3-minute intervals
+  const currentTime = useCurrentTime(5); // 5-minute intervals
 
   // OPTIMIZED: Use custom hook for default category selection
   const setMinutesCallback = useCallback(
