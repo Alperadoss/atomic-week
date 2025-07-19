@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -53,6 +54,98 @@ type Category = {
   createdAt: number;
 };
 
+// OPTIMIZED: Individual day component for better performance
+const DayColumn = React.memo(
+  ({
+    day,
+    dayIndex,
+    dayRecords,
+    isToday,
+    currentTimePosition,
+    onCreateRecord,
+    onEditRecord,
+  }: {
+    day: dayjs.Dayjs;
+    dayIndex: number;
+    dayRecords: any[];
+    isToday: boolean;
+    currentTimePosition: number;
+    onCreateRecord: (day: dayjs.Dayjs, hour: number) => void;
+    onEditRecord: (record: RecordItem) => void;
+  }) => {
+    // OPTIMIZED: Memoize hour slots generation per day
+    const hourSlots = useMemo(() => {
+      return Array.from({ length: 24 }, (_, hour) => (
+        <Pressable
+          key={hour}
+          style={[styles.hourSlot, { height: HOUR_HEIGHT }]}
+          onPress={() => onCreateRecord(day, hour)}
+        >
+          <View style={styles.hourSlotContent} />
+        </Pressable>
+      ));
+    }, [day, onCreateRecord]);
+
+    return (
+      <View style={styles.completeDayColumn}>
+        {/* Day Header */}
+        <View style={[styles.dayHeaderCell, isToday && styles.todayColumn]}>
+          <Text style={[styles.dayName, isToday && styles.todayText]}>
+            {day.format("ddd")}
+          </Text>
+          <Text style={[styles.dayNumber, isToday && styles.todayText]}>
+            {day.format("D")}
+          </Text>
+        </View>
+
+        {/* Day Content */}
+        <View style={styles.dayColumn}>
+          {/* OPTIMIZED: Memoized hour slots */}
+          {hourSlots}
+
+          {/* Current time indicator for today */}
+          {isToday && (
+            <View
+              style={[styles.currentTimeLine, { top: currentTimePosition }]}
+            >
+              <View style={styles.currentTimeIndicator} />
+            </View>
+          )}
+
+          {/* Records with pre-calculated positions */}
+          {dayRecords.map((recordData: any) => {
+            const recordTime = dayjs(recordData.timestamp);
+            return (
+              <Pressable
+                key={recordData.id}
+                style={[
+                  styles.recordBlock,
+                  {
+                    top: recordData.top,
+                    height: Math.max(recordData.height, 20),
+                    backgroundColor: recordData.categoryColor,
+                  },
+                ]}
+                onPress={() => onEditRecord(recordData)}
+              >
+                <Text style={styles.recordTitle} numberOfLines={2}>
+                  {recordData.description}
+                </Text>
+                <Text style={styles.recordTime}>
+                  {recordTime.format("HH:mm")} ({recordData.minutes}
+                  m)
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+);
+
+DayColumn.displayName = "DayColumn";
+
 export default function WeekScreen() {
   // Week state
   const [currentWeek, setCurrentWeek] = useState(dayjs().startOf("isoWeek"));
@@ -60,12 +153,8 @@ export default function WeekScreen() {
   // React Query hooks for data fetching with caching
   const weekStart = currentWeek.valueOf();
   const weekEnd = currentWeek.add(6, "day").endOf("day").valueOf();
-  const { data: records = [], isLoading: recordsLoading } = useWeekRecords(
-    weekStart,
-    weekEnd
-  );
-  const { data: categories = [], isLoading: categoriesLoading } =
-    useCategories();
+  const { data: records = [] } = useWeekRecords(weekStart, weekEnd);
+  const { data: categories = [] } = useCategories();
 
   // Mutation hooks for database operations
   const insertRecordMutation = useInsertRecord();
@@ -116,12 +205,6 @@ export default function WeekScreen() {
   // OPTIMIZED: Memoize record creation handler
   const handleCreateRecord = useCallback(
     (day: dayjs.Dayjs, hour: number) => {
-      console.log(
-        "Creating record for:",
-        day.format("YYYY-MM-DD"),
-        "at hour:",
-        hour
-      );
       setSelectedDay(day);
       const defaultStart = day.hour(hour).minute(0).toDate();
       const defaultFinish = day
@@ -139,20 +222,12 @@ export default function WeekScreen() {
 
   // OPTIMIZED: Memoize save record handler
   const handleSaveRecord = useCallback(async () => {
-    console.log("Saving record:", {
-      selectedDay,
-      minutes,
-      recordName,
-      selectedCategoryId,
-    });
     if (!selectedDay) {
-      console.log("No selected day");
       return;
     }
 
     const mins = parseInt(minutes, 10);
     if (isNaN(mins) || mins <= 0) {
-      console.log("Invalid minutes:", minutes);
       return;
     }
 
@@ -163,7 +238,6 @@ export default function WeekScreen() {
       .millisecond(0)
       .valueOf();
 
-    console.log("Inserting record with timestamp:", ts);
     insertRecordMutation.mutate({
       categoryId: selectedCategoryId,
       description: recordName.trim(),
@@ -182,7 +256,6 @@ export default function WeekScreen() {
 
   // OPTIMIZED: Memoize edit record handler
   const handleEditRecord = useCallback((record: RecordItem) => {
-    console.log("Editing record:", record);
     setEditingRecord(record);
     setRecordName(record.description);
     setSelectedCategoryId(record.categoryId);
@@ -196,7 +269,6 @@ export default function WeekScreen() {
 
   // OPTIMIZED: Memoize update record handler
   const handleUpdateRecord = useCallback(async () => {
-    console.log("Updating record:", editingRecord?.id);
     if (!editingRecord) return;
 
     const mins = parseInt(minutes, 10);
@@ -229,7 +301,6 @@ export default function WeekScreen() {
 
   // OPTIMIZED: Memoize delete record handler
   const handleDeleteRecord = useCallback(() => {
-    console.log("Deleting record:", editingRecord?.id);
     if (!editingRecord) return;
 
     deleteRecordMutation.mutate(editingRecord.id);
@@ -312,6 +383,49 @@ export default function WeekScreen() {
     return grouped;
   }, [records, categories]);
 
+  // OPTIMIZED: Memoize day data for FlatList
+  const dayData = useMemo(() => {
+    return weekDays.map((day, dayIndex) => {
+      const dayKey = day.format("YYYY-MM-DD");
+      const dayRecords = recordsByDay.get(dayKey) || [];
+      const isToday = dayKey === dayjs().format("YYYY-MM-DD");
+
+      return {
+        id: dayKey,
+        day,
+        dayIndex,
+        dayRecords,
+        isToday,
+      };
+    });
+  }, [weekDays, recordsByDay]);
+
+  // OPTIMIZED: FlatList render function
+  const renderDay = useCallback(
+    ({ item }: { item: any }) => (
+      <DayColumn
+        day={item.day}
+        dayIndex={item.dayIndex}
+        dayRecords={item.dayRecords}
+        isToday={item.isToday}
+        currentTimePosition={currentTimePosition}
+        onCreateRecord={handleCreateRecord}
+        onEditRecord={handleEditRecord}
+      />
+    ),
+    [currentTimePosition, handleCreateRecord, handleEditRecord]
+  );
+
+  // OPTIMIZED: FlatList performance props
+  const getItemLayout = useCallback(
+    (data: any, index: number) => ({
+      length: DAY_WIDTH,
+      offset: DAY_WIDTH * index,
+      index,
+    }),
+    []
+  );
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -338,114 +452,26 @@ export default function WeekScreen() {
 
       {/* Week Timeline */}
       <View style={styles.timelineContainer}>
-        {/* Scrollable Content - both vertical and horizontal */}
         <ScrollView style={styles.scrollView} horizontal={false}>
           <View style={styles.weekContentWrapper}>
-            {/* Time and Days Content Row */}
             <View style={styles.contentRow}>
-              {/* Fixed Time Column - memoized for performance */}
+              {/* Fixed Time Column */}
               <View style={styles.fixedTimeColumn}>{hourGrid}</View>
 
-              {/* Horizontally scrollable day columns with headers */}
-              <ScrollView
+              {/* OPTIMIZED: Virtualized day columns using FlatList */}
+              <FlatList
+                data={dayData}
+                renderItem={renderDay}
+                keyExtractor={(item) => item.id}
                 horizontal={true}
                 showsHorizontalScrollIndicator={false}
-              >
-                <View style={styles.daysContentWithHeaders}>
-                  {/* Each day as a complete column with header and content */}
-                  {weekDays.map((day: any, dayIndex: any) => {
-                    const dayKey = day.format("YYYY-MM-DD");
-                    const dayRecords = recordsByDay.get(dayKey) || [];
-                    const isToday = dayKey === dayjs().format("YYYY-MM-DD");
-
-                    return (
-                      <View key={dayIndex} style={styles.completeDayColumn}>
-                        {/* Day Header */}
-                        <View
-                          style={[
-                            styles.dayHeaderCell,
-                            isToday && styles.todayColumn,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dayName,
-                              isToday && styles.todayText,
-                            ]}
-                          >
-                            {day.format("ddd")}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.dayNumber,
-                              isToday && styles.todayText,
-                            ]}
-                          >
-                            {day.format("D")}
-                          </Text>
-                        </View>
-
-                        {/* Day Content */}
-                        <View style={styles.dayColumn}>
-                          {/* Hour slots */}
-                          {Array.from({ length: 24 }).map((_, hour) => (
-                            <Pressable
-                              key={hour}
-                              style={[styles.hourSlot, { height: HOUR_HEIGHT }]}
-                              onPress={() => handleCreateRecord(day, hour)}
-                            >
-                              <View style={styles.hourSlotContent} />
-                            </Pressable>
-                          ))}
-
-                          {/* Memoized current time indicator for today */}
-                          {isToday && (
-                            <View
-                              style={[
-                                styles.currentTimeLine,
-                                { top: currentTimePosition },
-                              ]}
-                            >
-                              <View style={styles.currentTimeIndicator} />
-                            </View>
-                          )}
-
-                          {/* Memoized Records with pre-calculated positions */}
-                          {dayRecords.map((recordData: any) => {
-                            const recordTime = dayjs(recordData.timestamp);
-                            return (
-                              <Pressable
-                                key={recordData.id}
-                                style={[
-                                  styles.recordBlock,
-                                  {
-                                    top: recordData.top,
-                                    height: Math.max(recordData.height, 20),
-                                    backgroundColor: recordData.categoryColor,
-                                  },
-                                ]}
-                                onPress={() => handleEditRecord(recordData)}
-                              >
-                                <Text
-                                  style={styles.recordTitle}
-                                  numberOfLines={2}
-                                >
-                                  {recordData.description}
-                                </Text>
-                                <Text style={styles.recordTime}>
-                                  {recordTime.format("HH:mm")} (
-                                  {recordData.minutes}
-                                  m)
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+                getItemLayout={getItemLayout}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={3}
+                windowSize={5}
+                initialNumToRender={3}
+                updateCellsBatchingPeriod={100}
+              />
             </View>
           </View>
         </ScrollView>

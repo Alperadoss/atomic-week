@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Optimized hook for managing time calculations with minimal re-renders
@@ -22,25 +22,47 @@ export const useTimeCalculation = (
 };
 
 /**
- * Optimized hook for managing current time updates with minimal re-renders
+ * OPTIMIZED: Current time hook with proper state management for re-renders
+ * Uses state instead of refs to ensure components re-render when time changes
  */
 export const useCurrentTime = (intervalMinutes: number = 3) => {
-  const currentTimeRef = useRef(dayjs());
+  const [currentTime, setCurrentTime] = useState(() => dayjs());
+  const intervalRef = useRef<number | null>(null);
 
   const updateCurrentTime = useCallback(() => {
-    currentTimeRef.current = dayjs();
-    return currentTimeRef.current;
+    setCurrentTime(dayjs());
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    // Set up new interval
+    intervalRef.current = setInterval(() => {
       updateCurrentTime();
     }, intervalMinutes * 60 * 1000);
 
-    return () => clearInterval(interval);
+    // Cleanup function
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [intervalMinutes, updateCurrentTime]);
 
-  return currentTimeRef.current;
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  return currentTime;
 };
 
 /**
@@ -64,18 +86,4 @@ export const useDefaultCategory = (
       hasSetDefault.current = true;
     }
   }, [categories.length > 0, selectedCategoryId === null]); // Simplified dependencies
-};
-
-/**
- * Debounced effect hook to prevent rapid re-renders
- */
-export const useDebouncedEffect = (
-  effect: () => void,
-  dependencies: any[],
-  delay: number = 100
-) => {
-  useEffect(() => {
-    const timer = setTimeout(effect, delay);
-    return () => clearTimeout(timer);
-  }, [...dependencies, delay]);
 };

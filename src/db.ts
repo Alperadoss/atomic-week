@@ -101,10 +101,6 @@ export const getCategories = (): any => {
   return executeQuery("SELECT * FROM categories ORDER BY createdAt DESC");
 };
 
-export const getCategoryById = (id: number): any => {
-  return executeQuery("SELECT * FROM categories WHERE id = ?", [id]);
-};
-
 export const updateCategory = (
   id: number,
   name?: string,
@@ -150,21 +146,6 @@ export const insertRecord = (record: RecordInput): any => {
   return executeQuery(
     "INSERT INTO records (categoryId, description, minutes, timestamp) VALUES (?, ?, ?, ?)",
     [record.categoryId, record.description, record.minutes, record.timestamp]
-  );
-};
-
-export const getRecords = (limit?: number): any => {
-  const sql = limit
-    ? "SELECT * FROM records ORDER BY timestamp DESC LIMIT ?"
-    : "SELECT * FROM records ORDER BY timestamp DESC";
-  const params = limit ? [limit] : [];
-  return executeQuery(sql, params);
-};
-
-export const getRecordsByCategory = (categoryId: number): any => {
-  return executeQuery(
-    "SELECT * FROM records WHERE categoryId = ? ORDER BY timestamp DESC",
-    [categoryId]
   );
 };
 
@@ -221,53 +202,6 @@ export const updateRecord = (
 
 export const deleteRecord = (id: number): any => {
   return executeQuery("DELETE FROM records WHERE id = ?", [id]);
-};
-
-// Week Stats
-export const insertWeekStats = (
-  weekStartIso: string,
-  jsonPayload: string
-): any => {
-  return executeQuery(
-    "INSERT INTO week_stats (weekStartIso, jsonPayload) VALUES (?, ?)",
-    [weekStartIso, jsonPayload]
-  );
-};
-
-export const getWeekStats = (weekStartIso: string): any => {
-  return executeQuery("SELECT * FROM week_stats WHERE weekStartIso = ?", [
-    weekStartIso,
-  ]);
-};
-
-export const getAllWeekStats = (): any => {
-  return executeQuery("SELECT * FROM week_stats ORDER BY weekStartIso DESC");
-};
-
-export const updateWeekStats = (
-  weekStartIso: string,
-  jsonPayload: string
-): any => {
-  return executeQuery(
-    "UPDATE week_stats SET jsonPayload = ? WHERE weekStartIso = ?",
-    [jsonPayload, weekStartIso]
-  );
-};
-
-export const upsertWeekStats = (
-  weekStartIso: string,
-  jsonPayload: string
-): any => {
-  return executeQuery(
-    "INSERT OR REPLACE INTO week_stats (weekStartIso, jsonPayload) VALUES (?, ?)",
-    [weekStartIso, jsonPayload]
-  );
-};
-
-export const deleteWeekStats = (weekStartIso: string): any => {
-  return executeQuery("DELETE FROM week_stats WHERE weekStartIso = ?", [
-    weekStartIso,
-  ]);
 };
 
 // Utility function to get records for a specific day

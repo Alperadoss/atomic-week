@@ -20,9 +20,4 @@ export const hexToRgba = (hex: string, opacity: number): string => {
   return result;
 };
 
-/**
- * Clear the color conversion cache (useful for memory management)
- */
-export const clearColorCache = (): void => {
-  hexToRgbaCache.clear();
-};
+

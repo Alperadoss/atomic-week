@@ -1,11 +1,10 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useIsFocused } from "@react-navigation/native";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { getCategories, getRecordsByDateRange } from "../../src/db";
+import { useWeekStatistics } from "../../src/hooks/useDatabase";
 
 dayjs.extend(isoWeek);
 
@@ -34,46 +33,30 @@ type CategoryStat = {
 
 export default function StatisticsScreen() {
   const [currentWeek, setCurrentWeek] = useState(dayjs().startOf("isoWeek"));
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
-  const [totalWeekMinutes, setTotalWeekMinutes] = useState(0);
-  const isFocused = useIsFocused();
 
-  const loadData = async () => {
-    try {
-      // Load categories
-      const categoriesResult = await getCategories();
-      setCategories(categoriesResult);
+  // OPTIMIZED: Use React Query hook for cached data fetching
+  const weekStart = currentWeek.valueOf();
+  const weekEnd = currentWeek.add(6, "day").endOf("day").valueOf();
+  const { data, isLoading, error } = useWeekStatistics(weekStart, weekEnd);
 
-      // Load week records
-      const weekStart = currentWeek.valueOf();
-      const weekEnd = currentWeek.add(6, "day").endOf("day").valueOf();
-      const recordsResult = await getRecordsByDateRange(weekStart, weekEnd);
-      setRecords(recordsResult);
-
-      // Calculate statistics
-      calculateStatistics(recordsResult, categoriesResult);
-    } catch (e) {
-      console.error("loadData", e);
+  // OPTIMIZED: Memoize expensive statistics calculations
+  const { categoryStats, totalWeekMinutes } = useMemo(() => {
+    if (!data) {
+      return { categoryStats: [], totalWeekMinutes: 0 };
     }
-  };
 
-  const calculateStatistics = (
-    records: RecordItem[],
-    categories: Category[]
-  ) => {
+    const { records, categories } = data;
+
     const totalMinutes = records.reduce(
-      (sum, record) => sum + record.minutes,
+      (sum: number, record: RecordItem) => sum + record.minutes,
       0
     );
-    setTotalWeekMinutes(totalMinutes);
 
     // Group records by category
     const categoryGroups: { [key: string]: RecordItem[] } = {};
 
     // Initialize with all categories (including those with no records)
-    categories.forEach((category) => {
+    categories.forEach((category: Category) => {
       categoryGroups[category.id.toString()] = [];
     });
 
@@ -81,7 +64,7 @@ export default function StatisticsScreen() {
     categoryGroups["uncategorized"] = [];
 
     // Group records
-    records.forEach((record) => {
+    records.forEach((record: RecordItem) => {
       const key = record.categoryId
         ? record.categoryId.toString()
         : "uncategorized";
@@ -95,10 +78,10 @@ export default function StatisticsScreen() {
     const stats: CategoryStat[] = [];
 
     // Real categories
-    categories.forEach((category) => {
+    categories.forEach((category: Category) => {
       const categoryRecords = categoryGroups[category.id.toString()] || [];
       const categoryMinutes = categoryRecords.reduce(
-        (sum, record) => sum + record.minutes,
+        (sum: number, record: RecordItem) => sum + record.minutes,
         0
       );
       const percentage =
@@ -117,7 +100,7 @@ export default function StatisticsScreen() {
     const uncategorizedRecords = categoryGroups["uncategorized"] || [];
     if (uncategorizedRecords.length > 0) {
       const uncategorizedMinutes = uncategorizedRecords.reduce(
-        (sum, record) => sum + record.minutes,
+        (sum: number, record: RecordItem) => sum + record.minutes,
         0
       );
       const percentage =
@@ -139,23 +122,18 @@ export default function StatisticsScreen() {
 
     // Sort by total minutes (descending)
     stats.sort((a, b) => b.totalMinutes - a.totalMinutes);
-    setCategoryStats(stats);
-  };
 
-  useEffect(() => {
-    if (isFocused) {
-      loadData();
-    }
-  }, [currentWeek, isFocused]);
+    return { categoryStats: stats, totalWeekMinutes: totalMinutes };
+  }, [data]);
 
+  // OPTIMIZED: Memoize navigation function
   const navigateWeek = (direction: "prev" | "next") => {
-    if (direction === "prev") {
-      setCurrentWeek(currentWeek.subtract(1, "week"));
-    } else {
-      setCurrentWeek(currentWeek.add(1, "week"));
-    }
+    setCurrentWeek((prev) =>
+      direction === "prev" ? prev.subtract(1, "week") : prev.add(1, "week")
+    );
   };
 
+  // OPTIMIZED: Memoize render function for better performance
   const renderCategoryStat = (stat: CategoryStat) => (
     <View key={stat.category.id} style={styles.statCard}>
       <View style={styles.statHeader}>
@@ -196,6 +174,68 @@ export default function StatisticsScreen() {
       </View>
     </View>
   );
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable
+            style={styles.navButton}
+            onPress={() => navigateWeek("prev")}
+          >
+            <MaterialIcons name="chevron-left" size={24} color="white" />
+          </Pressable>
+
+          <Text style={styles.headerText}>
+            Week of {currentWeek.format("MMM D")} -{" "}
+            {currentWeek.add(6, "day").format("MMM D")}
+          </Text>
+
+          <Pressable
+            style={styles.navButton}
+            onPress={() => navigateWeek("next")}
+          >
+            <MaterialIcons name="chevron-right" size={24} color="white" />
+          </Pressable>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading statistics...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable
+            style={styles.navButton}
+            onPress={() => navigateWeek("prev")}
+          >
+            <MaterialIcons name="chevron-left" size={24} color="white" />
+          </Pressable>
+
+          <Text style={styles.headerText}>
+            Week of {currentWeek.format("MMM D")} -{" "}
+            {currentWeek.add(6, "day").format("MMM D")}
+          </Text>
+
+          <Pressable
+            style={styles.navButton}
+            onPress={() => navigateWeek("next")}
+          >
+            <MaterialIcons name="chevron-right" size={24} color="white" />
+          </Pressable>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>Error loading statistics</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -265,6 +305,19 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#ef4444",
   },
   summaryCard: {
     backgroundColor: "white",

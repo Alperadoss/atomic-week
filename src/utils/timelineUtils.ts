@@ -25,10 +25,10 @@ export const getRecordPosition = (timestamp: number, minutes: number) => {
 /**
  * Generate hour labels (0-23) - this can be memoized
  */
-export const generateHourLabels = (): Array<{
+export const generateHourLabels = (): {
   hour: number;
   label: string;
-}> => {
+}[] => {
   return Array.from({ length: 24 }, (_, hour) => ({
     hour,
     label: dayjs().hour(hour).format("HH:00"),

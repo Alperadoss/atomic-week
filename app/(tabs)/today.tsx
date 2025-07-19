@@ -51,9 +51,8 @@ export type Category = {
 
 export default function TodayScreen() {
   // React Query hooks for data fetching with caching
-  const { data: records = [], isLoading: recordsLoading } = useTodayRecords();
-  const { data: categories = [], isLoading: categoriesLoading } =
-    useCategories();
+  const { data: records = [] } = useTodayRecords();
+  const { data: categories = [] } = useCategories();
 
   // Mutation hooks for database operations
   const insertRecordMutation = useInsertRecord();

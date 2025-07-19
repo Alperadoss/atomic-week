@@ -13,6 +13,7 @@ export const QUERY_KEYS = {
   CATEGORIES: ["categories"],
   TODAY_RECORDS: ["records", "today"],
   WEEK_RECORDS: (weekStart: number) => ["records", "week", weekStart],
+  WEEK_STATS: (weekStart: number) => ["stats", "week", weekStart],
 } as const;
 
 /**
@@ -54,6 +55,26 @@ export const useWeekRecords = (weekStart: number, weekEnd: number) => {
 };
 
 /**
+ * Hook to fetch week statistics data with caching
+ * This combines records and categories for statistics calculations
+ */
+export const useWeekStatistics = (weekStart: number, weekEnd: number) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.WEEK_STATS(weekStart),
+    queryFn: async () => {
+      const [records, categories] = await Promise.all([
+        getRecordsByDateRange(weekStart, weekEnd),
+        getCategories(),
+      ]);
+      return { records, categories };
+    },
+    staleTime: 3 * 60 * 1000, // 3 minutes - statistics can be slightly staler
+    gcTime: 20 * 60 * 1000, // 20 minutes
+    refetchOnWindowFocus: true,
+  });
+};
+
+/**
  * Hook to insert a new record with cache invalidation
  */
 export const useInsertRecord = () => {
@@ -65,6 +86,7 @@ export const useInsertRecord = () => {
       // Invalidate related queries to trigger refetch
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TODAY_RECORDS });
       queryClient.invalidateQueries({ queryKey: ["records", "week"] });
+      queryClient.invalidateQueries({ queryKey: ["stats", "week"] });
     },
   });
 };
@@ -92,6 +114,7 @@ export const useUpdateRecord = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TODAY_RECORDS });
       queryClient.invalidateQueries({ queryKey: ["records", "week"] });
+      queryClient.invalidateQueries({ queryKey: ["stats", "week"] });
     },
   });
 };
@@ -107,6 +130,7 @@ export const useDeleteRecord = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TODAY_RECORDS });
       queryClient.invalidateQueries({ queryKey: ["records", "week"] });
+      queryClient.invalidateQueries({ queryKey: ["stats", "week"] });
     },
   });
 };
