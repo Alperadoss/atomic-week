@@ -2,7 +2,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import dayjs from "dayjs";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -14,16 +14,25 @@ import {
 } from "react-native";
 
 import {
-  deleteRecord,
-  fetchTodayRecords,
-  getCategories,
-  insertRecord,
-  updateRecord,
-} from "../../src/db";
-
-const HOUR_HEIGHT = 60; // px per hour
-const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
-const TIMELINE_HEIGHT = 24 * HOUR_HEIGHT;
+  useCategories,
+  useDeleteRecord,
+  useInsertRecord,
+  useTodayRecords,
+  useUpdateRecord,
+} from "../../src/hooks/useDatabase";
+import {
+  useCurrentTime,
+  useDefaultCategory,
+  useTimeCalculation,
+} from "../../src/hooks/useOptimizedEffects";
+import { hexToRgba } from "../../src/utils/colorUtils";
+import {
+  generateHourLabels,
+  getCurrentTimePosition,
+  getRecordPosition,
+  HOUR_HEIGHT,
+  TIMELINE_HEIGHT,
+} from "../../src/utils/timelineUtils";
 
 export type RecordItem = {
   id: number;
@@ -41,8 +50,17 @@ export type Category = {
 };
 
 export default function TodayScreen() {
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  // React Query hooks for data fetching with caching
+  const { data: records = [], isLoading: recordsLoading } = useTodayRecords();
+  const { data: categories = [], isLoading: categoriesLoading } =
+    useCategories();
+
+  // Mutation hooks for database operations
+  const insertRecordMutation = useInsertRecord();
+  const updateRecordMutation = useUpdateRecord();
+  const deleteRecordMutation = useDeleteRecord();
+
+  // Local UI state
   const [modalVisible, setModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
@@ -64,43 +82,20 @@ export default function TodayScreen() {
   const [showEditStartPicker, setShowEditStartPicker] = useState(false);
   const [showEditFinishPicker, setShowEditFinishPicker] = useState(false);
 
-  const loadRecords = async () => {
-    try {
-      const result = await fetchTodayRecords(new Date());
-      console.log("Loaded records:", result);
-      setRecords(result);
-    } catch (e) {
-      console.error("loadRecords", e);
-    }
-  };
+  // OPTIMIZED: Use custom hook for current time with minimal re-renders
+  const currentTime = useCurrentTime(3); // 3-minute intervals
 
-  const loadCategories = async () => {
-    try {
-      const result = await getCategories();
-      console.log("Loaded categories:", result);
-      setCategories(result);
-      // Set default category if none selected
-      if (result.length > 0 && !selectedCategoryId) {
-        setSelectedCategoryId(result[0].id);
-      }
-    } catch (e) {
-      console.error("loadCategories", e);
-    }
-  };
+  // OPTIMIZED: Use custom hook for default category selection
+  const setMinutesCallback = useCallback(
+    (mins: string) => setMinutes(mins),
+    []
+  );
+  useDefaultCategory(categories, selectedCategoryId, setSelectedCategoryId);
 
-  useEffect(() => {
-    loadRecords();
-    loadCategories();
-  }, []);
+  // OPTIMIZED: Use custom hook for time calculations (only for add modal)
+  useTimeCalculation(startTime, finishTime, setMinutesCallback);
 
-  // Calculate minutes when start or finish time changes
-  useEffect(() => {
-    const diffMs = finishTime.getTime() - startTime.getTime();
-    const diffMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)));
-    setMinutes(diffMinutes.toString());
-  }, [startTime, finishTime]);
-
-  // Also calculate for edit modal when times change
+  // OPTIMIZED: Separate effect for edit modal time calculation to avoid conflicts
   useEffect(() => {
     if (editModalVisible) {
       const diffMs = finishTime.getTime() - startTime.getTime();
@@ -109,16 +104,62 @@ export default function TodayScreen() {
     }
   }, [startTime, finishTime, editModalVisible]);
 
-  const resetModalForm = () => {
+  // Memoize hour grid generation for performance
+  const hourGrid = useMemo(() => {
+    const hourLabels = generateHourLabels();
+    return hourLabels.map(
+      ({ hour, label }: { hour: number; label: string }) => (
+        <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
+          <Text style={styles.hourLabel}>{label}</Text>
+          <View style={styles.hourLine} />
+        </View>
+      )
+    );
+  }, []);
+
+  // Memoize current time position
+  const currentTimePosition = useMemo(() => {
+    return getCurrentTimePosition(currentTime);
+  }, [currentTime]);
+
+  // Memoize record position calculations and color conversion
+  const recordBlocks = useMemo(() => {
+    return records.map((r: RecordItem) => {
+      const { top, height } = getRecordPosition(r.timestamp, r.minutes);
+      const isResizing = resizingRecord === r.id;
+      const category = categories.find((c: Category) => c.id === r.categoryId);
+      const baseColor = category?.colorHex || "#a0c4ff";
+      const categoryColor = hexToRgba(baseColor, 0.5);
+
+      return { ...r, top, height, isResizing, category, categoryColor };
+    });
+  }, [records, categories, resizingRecord]);
+
+  // OPTIMIZED: Memoize modal form reset to prevent recreating on every render
+  const resetModalForm = useCallback(() => {
     setRecordName("");
     setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
     setMinutes("");
     setStartTime(new Date());
     setFinishTime(new Date(Date.now() + 60 * 60 * 1000));
     setModalVisible(false);
-  };
+  }, [categories]);
 
-  const handleEditRecord = (record: RecordItem) => {
+  // OPTIMIZED: Memoize edit form reset
+  const resetEditForm = useCallback(() => {
+    setEditingRecord(null);
+    setRecordName("");
+    setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
+    setMinutes("");
+    setStartTime(new Date());
+    setFinishTime(new Date(Date.now() + 60 * 60 * 1000));
+    setShowEditStartPicker(false);
+    setShowEditFinishPicker(false);
+    setEditModalVisible(false);
+  }, [categories]);
+
+  // OPTIMIZED: Memoize record editing function
+  const handleEditRecord = useCallback((record: RecordItem) => {
     setEditingRecord(record);
     setRecordName(record.description);
     setSelectedCategoryId(record.categoryId);
@@ -127,9 +168,10 @@ export default function TodayScreen() {
     setFinishTime(recordTime.add(record.minutes, "minute").toDate());
     setMinutes(record.minutes.toString());
     setEditModalVisible(true);
-  };
+  }, []);
 
-  const handleUpdateRecord = async () => {
+  // OPTIMIZED: Memoize update record function
+  const handleUpdateRecord = useCallback(async () => {
     if (!editingRecord) return;
 
     const mins = parseInt(minutes, 10);
@@ -143,87 +185,75 @@ export default function TodayScreen() {
       .millisecond(0)
       .valueOf();
 
-    try {
-      await updateRecord(
-        editingRecord.id,
-        selectedCategoryId,
-        recordName.trim(),
-        mins,
-        ts
-      );
-      resetEditForm();
-      loadRecords();
-    } catch (e) {
-      console.error("updateRecord", e);
-    }
-  };
+    updateRecordMutation.mutate({
+      id: editingRecord.id,
+      categoryId: selectedCategoryId,
+      description: recordName.trim(),
+      minutes: mins,
+      timestamp: ts,
+    });
+    resetEditForm();
+  }, [
+    editingRecord,
+    minutes,
+    startTime,
+    selectedCategoryId,
+    recordName,
+    updateRecordMutation,
+    resetEditForm,
+  ]);
 
-  const handleDeleteRecord = async () => {
+  // OPTIMIZED: Memoize delete record function
+  const handleDeleteRecord = useCallback(() => {
     if (!editingRecord) return;
+    deleteRecordMutation.mutate(editingRecord.id);
+    resetEditForm();
+  }, [editingRecord, deleteRecordMutation, resetEditForm]);
 
-    try {
-      await deleteRecord(editingRecord.id);
-      resetEditForm();
-      loadRecords();
-    } catch (e) {
-      console.error("deleteRecord", e);
-    }
-  };
+  // OPTIMIZED: Memoize long press handler
+  const handleLongPress = useCallback((recordId: number) => {
+    setResizingRecord((prev) => (prev === recordId ? null : recordId));
+  }, []);
 
-  const handleLongPress = (recordId: number) => {
-    setResizingRecord(resizingRecord === recordId ? null : recordId);
-  };
+  // OPTIMIZED: Memoize adjust record time function
+  const adjustRecordTime = useCallback(
+    async (
+      recordId: number,
+      action: "extend" | "shrink" | "move-earlier" | "move-later"
+    ) => {
+      const record = records.find((r: RecordItem) => r.id === recordId);
+      if (!record) return;
 
-  const adjustRecordTime = async (
-    recordId: number,
-    action: "extend" | "shrink" | "move-earlier" | "move-later"
-  ) => {
-    const record = records.find((r) => r.id === recordId);
-    if (!record) return;
+      let newMinutes = record.minutes;
+      let newTimestamp = record.timestamp;
 
-    let newMinutes = record.minutes;
-    let newTimestamp = record.timestamp;
+      switch (action) {
+        case "extend":
+          newMinutes += 15; // Add 15 minutes
+          break;
+        case "shrink":
+          newMinutes = Math.max(15, newMinutes - 15); // Remove 15 minutes, minimum 15
+          break;
+        case "move-earlier":
+          newTimestamp = dayjs(record.timestamp)
+            .subtract(15, "minute")
+            .valueOf();
+          break;
+        case "move-later":
+          newTimestamp = dayjs(record.timestamp).add(15, "minute").valueOf();
+          break;
+      }
 
-    switch (action) {
-      case "extend":
-        newMinutes += 15; // Add 15 minutes
-        break;
-      case "shrink":
-        newMinutes = Math.max(15, newMinutes - 15); // Remove 15 minutes, minimum 15
-        break;
-      case "move-earlier":
-        newTimestamp = dayjs(record.timestamp).subtract(15, "minute").valueOf();
-        break;
-      case "move-later":
-        newTimestamp = dayjs(record.timestamp).add(15, "minute").valueOf();
-        break;
-    }
-
-    try {
-      await updateRecord(
-        recordId,
-        null,
-        record.description,
-        newMinutes,
-        newTimestamp
-      );
-      loadRecords();
-    } catch (e) {
-      console.error("adjustRecordTime", e);
-    }
-  };
-
-  const resetEditForm = () => {
-    setEditingRecord(null);
-    setRecordName("");
-    setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
-    setMinutes("");
-    setStartTime(new Date());
-    setFinishTime(new Date(Date.now() + 60 * 60 * 1000));
-    setShowEditStartPicker(false);
-    setShowEditFinishPicker(false);
-    setEditModalVisible(false);
-  };
+      updateRecordMutation.mutate({
+        id: recordId,
+        categoryId: null,
+        description: record.description,
+        minutes: newMinutes,
+        timestamp: newTimestamp,
+      });
+    },
+    [records, updateRecordMutation]
+  );
 
   return (
     <>
@@ -244,80 +274,50 @@ export default function TodayScreen() {
           }}
           onPress={() => setResizingRecord(null)}
         >
-          {/* hour grid */}
-          {Array.from({ length: 24 }).map((_, hr) => (
-            <View key={hr} style={[styles.hourRow, { top: hr * HOUR_HEIGHT }]}>
-              <Text style={styles.hourLabel}>
-                {dayjs().hour(hr).format("HH:00")}
-              </Text>
-              <View style={styles.hourLine} />
-            </View>
-          ))}
+          {/* Memoized hour grid */}
+          {hourGrid}
 
-          {/* Current time indicator */}
-          {(() => {
-            const now = dayjs();
-            const currentTop = (now.hour() * 60 + now.minute()) * MINUTE_HEIGHT;
-            return (
-              <View style={[styles.currentTimeLine, { top: currentTop }]}>
-                <View style={styles.currentTimeCircle} />
-                <View style={styles.currentTimeLineBar} />
-              </View>
-            );
-          })()}
+          {/* Memoized current time indicator */}
+          <View style={[styles.currentTimeLine, { top: currentTimePosition }]}>
+            <View style={styles.currentTimeCircle} />
+            <View style={styles.currentTimeLineBar} />
+          </View>
 
-          {/* record blocks */}
-          {records.map((r) => {
-            const start = dayjs(r.timestamp);
-            const top = (start.hour() * 60 + start.minute()) * MINUTE_HEIGHT;
-            const height = r.minutes * MINUTE_HEIGHT;
-            const isResizing = resizingRecord === r.id;
-            const category = categories.find((c) => c.id === r.categoryId);
-            const baseColor = category?.colorHex || "#a0c4ff";
-            // Convert hex to rgba with 50% opacity
-            const hexToRgba = (hex: string, opacity: number) => {
-              const r = parseInt(hex.slice(1, 3), 16);
-              const g = parseInt(hex.slice(3, 5), 16);
-              const b = parseInt(hex.slice(5, 7), 16);
-              return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-            };
-            const categoryColor = hexToRgba(baseColor, 0.5);
-            console.log(
-              `Record ${
-                r.id
-              }: top=${top}, height=${height}, time=${start.format("HH:mm")}`
-            );
+          {/* Memoized record blocks */}
+          {recordBlocks.map((recordData: any) => {
             return (
               <Pressable
-                key={r.id}
+                key={recordData.id}
                 style={[
                   styles.eventBox,
                   {
-                    top,
-                    height,
+                    top: recordData.top,
+                    height: recordData.height,
                     minHeight: 44,
-                    backgroundColor: categoryColor,
+                    backgroundColor: recordData.categoryColor,
                   },
-                  isResizing && styles.eventBoxResizing,
+                  recordData.isResizing && styles.eventBoxResizing,
                 ]}
                 onPress={(e) => {
                   e.stopPropagation();
-                  if (isResizing) return;
-                  handleEditRecord(r);
+                  if (recordData.isResizing) return;
+                  handleEditRecord(recordData);
                 }}
                 onLongPress={(e) => {
                   e.stopPropagation();
-                  handleLongPress(r.id);
+                  handleLongPress(recordData.id);
                 }}
               >
                 {/* Resize controls - only show when resizing */}
-                {isResizing && (
+                {recordData.isResizing && (
                   <>
                     {/* Top controls */}
                     <View style={[styles.resizeControls, styles.topControls]}>
                       <Pressable
                         style={styles.resizeButton}
-                        onPress={() => adjustRecordTime(r.id, "move-earlier")}
+                        onPress={() =>
+                          adjustRecordTime(recordData.id, "move-earlier")
+                        }
                       >
                         <Text style={styles.resizeButtonText}>
                           ↑ Move Earlier
@@ -331,19 +331,25 @@ export default function TodayScreen() {
                     >
                       <Pressable
                         style={[styles.resizeButton, { marginRight: 2 }]}
-                        onPress={() => adjustRecordTime(r.id, "shrink")}
+                        onPress={() =>
+                          adjustRecordTime(recordData.id, "shrink")
+                        }
                       >
                         <Text style={styles.resizeButtonText}>- Shrink</Text>
                       </Pressable>
                       <Pressable
                         style={[styles.resizeButton, { marginRight: 2 }]}
-                        onPress={() => adjustRecordTime(r.id, "extend")}
+                        onPress={() =>
+                          adjustRecordTime(recordData.id, "extend")
+                        }
                       >
                         <Text style={styles.resizeButtonText}>+ Extend</Text>
                       </Pressable>
                       <Pressable
                         style={styles.resizeButton}
-                        onPress={() => adjustRecordTime(r.id, "move-later")}
+                        onPress={() =>
+                          adjustRecordTime(recordData.id, "move-later")
+                        }
                       >
                         <Text style={styles.resizeButtonText}>
                           ↓ Move Later
@@ -354,7 +360,7 @@ export default function TodayScreen() {
                 )}
 
                 {/* Regular content - only show when not resizing */}
-                {!isResizing && (
+                {!recordData.isResizing && (
                   <>
                     {/* Top resize handle */}
                     <View style={[styles.resizeHandle, styles.topHandle]} />
@@ -362,13 +368,15 @@ export default function TodayScreen() {
                     <View style={styles.eventContent}>
                       <View>
                         <Text style={styles.eventTitle}>
-                          {r.description || "Untitled"}
+                          {recordData.description || "Untitled"}
                         </Text>
                         <Text style={styles.eventCategory}>
-                          {category?.name || "No Category"}
+                          {recordData.category?.name || "No Category"}
                         </Text>
                       </View>
-                      <Text style={styles.eventDuration}>{r.minutes} min</Text>
+                      <Text style={styles.eventDuration}>
+                        {recordData.minutes} min
+                      </Text>
                     </View>
 
                     {/* Bottom resize handle */}
@@ -405,14 +413,14 @@ export default function TodayScreen() {
             >
               <Text style={styles.categoryButtonText}>
                 Category:{" "}
-                {categories.find((c) => c.id === selectedCategoryId)?.name ||
-                  "Select category"}
+                {categories.find((c: Category) => c.id === selectedCategoryId)
+                  ?.name || "Select category"}
               </Text>
             </Pressable>
 
             {showCategoryPicker && (
               <View style={styles.categoryPicker}>
-                {categories.map((category) => (
+                {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
                     style={[
@@ -489,18 +497,13 @@ export default function TodayScreen() {
                     .millisecond(0)
                     .valueOf();
 
-                  try {
-                    await insertRecord({
-                      categoryId: selectedCategoryId,
-                      description: recordName.trim(),
-                      minutes: mins,
-                      timestamp: ts,
-                    });
-                    resetModalForm();
-                    loadRecords();
-                  } catch (e) {
-                    console.error("insertRecord", e);
-                  }
+                  insertRecordMutation.mutate({
+                    categoryId: selectedCategoryId,
+                    description: recordName.trim(),
+                    minutes: mins,
+                    timestamp: ts,
+                  });
+                  resetModalForm();
                 }}
               >
                 <Text style={styles.btnText}>Save</Text>
@@ -533,14 +536,14 @@ export default function TodayScreen() {
             >
               <Text style={styles.categoryButtonText}>
                 Category:{" "}
-                {categories.find((c) => c.id === selectedCategoryId)?.name ||
-                  "Select category"}
+                {categories.find((c: Category) => c.id === selectedCategoryId)
+                  ?.name || "Select category"}
               </Text>
             </Pressable>
 
             {showCategoryPicker && (
               <View style={styles.categoryPicker}>
-                {categories.map((category) => (
+                {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
                     style={[

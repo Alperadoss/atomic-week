@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -14,18 +14,27 @@ import {
 } from "react-native";
 
 import {
-  deleteRecord,
-  getCategories,
-  getRecordsByDateRange,
-  insertRecord,
-  updateRecord,
-} from "../../src/db";
+  useCategories,
+  useDeleteRecord,
+  useInsertRecord,
+  useUpdateRecord,
+  useWeekRecords,
+} from "../../src/hooks/useDatabase";
+import {
+  useCurrentTime,
+  useDefaultCategory,
+  useTimeCalculation,
+} from "../../src/hooks/useOptimizedEffects";
+import { hexToRgba } from "../../src/utils/colorUtils";
+import {
+  generateHourLabels,
+  getCurrentTimePosition,
+  getRecordPosition,
+  HOUR_HEIGHT,
+  TIMELINE_HEIGHT,
+} from "../../src/utils/timelineUtils";
 
 dayjs.extend(isoWeek);
-
-const HOUR_HEIGHT = 60;
-const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
-const TIMELINE_HEIGHT = 24 * HOUR_HEIGHT;
 const DAY_WIDTH = 120; // Width of each day column
 const TIME_COLUMN_WIDTH = 50; // Narrower time column
 
@@ -45,9 +54,25 @@ type Category = {
 };
 
 export default function WeekScreen() {
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  // Week state
   const [currentWeek, setCurrentWeek] = useState(dayjs().startOf("isoWeek"));
+
+  // React Query hooks for data fetching with caching
+  const weekStart = currentWeek.valueOf();
+  const weekEnd = currentWeek.add(6, "day").endOf("day").valueOf();
+  const { data: records = [], isLoading: recordsLoading } = useWeekRecords(
+    weekStart,
+    weekEnd
+  );
+  const { data: categories = [], isLoading: categoriesLoading } =
+    useCategories();
+
+  // Mutation hooks for database operations
+  const insertRecordMutation = useInsertRecord();
+  const updateRecordMutation = useUpdateRecord();
+  const deleteRecordMutation = useDeleteRecord();
+
+  // Local UI state
   const [modalVisible, setModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
@@ -68,71 +93,52 @@ export default function WeekScreen() {
   const [showEditStartPicker, setShowEditStartPicker] = useState(false);
   const [showEditFinishPicker, setShowEditFinishPicker] = useState(false);
 
-  const loadRecords = async () => {
-    try {
-      const weekStart = currentWeek.valueOf();
-      const weekEnd = currentWeek.add(6, "day").endOf("day").valueOf();
-      const result = await getRecordsByDateRange(weekStart, weekEnd);
-      console.log("Loaded week records:", result);
-      setRecords(result);
-    } catch (e) {
-      console.error("loadRecords", e);
-    }
-  };
+  // OPTIMIZED: Use custom hook for current time with minimal re-renders
+  const currentTime = useCurrentTime(3); // 3-minute intervals
 
-  const loadCategories = async () => {
-    try {
-      const result = await getCategories();
-      setCategories(result);
-      if (result.length > 0 && !selectedCategoryId) {
-        setSelectedCategoryId(result[0].id);
-      }
-    } catch (e) {
-      console.error("loadCategories", e);
-    }
-  };
+  // OPTIMIZED: Use custom hook for default category selection
+  const setMinutesCallback = useCallback(
+    (mins: string) => setMinutes(mins),
+    []
+  );
+  useDefaultCategory(categories, selectedCategoryId, setSelectedCategoryId);
 
-  useEffect(() => {
-    loadRecords();
-    loadCategories();
-  }, [currentWeek]);
+  // OPTIMIZED: Use custom hook for time calculations
+  useTimeCalculation(startTime, finishTime, setMinutesCallback);
 
-  // Calculate minutes when start or finish time changes
-  useEffect(() => {
-    const diffMs = finishTime.getTime() - startTime.getTime();
-    const diffMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)));
-    setMinutes(diffMinutes.toString());
-  }, [startTime, finishTime]);
-
-  const navigateWeek = (direction: "prev" | "next") => {
-    if (direction === "prev") {
-      setCurrentWeek(currentWeek.subtract(1, "week"));
-    } else {
-      setCurrentWeek(currentWeek.add(1, "week"));
-    }
-  };
-
-  const handleCreateRecord = (day: dayjs.Dayjs, hour: number) => {
-    console.log(
-      "Creating record for:",
-      day.format("YYYY-MM-DD"),
-      "at hour:",
-      hour
+  // OPTIMIZED: Memoize navigation function
+  const navigateWeek = useCallback((direction: "prev" | "next") => {
+    setCurrentWeek((prev) =>
+      direction === "prev" ? prev.subtract(1, "week") : prev.add(1, "week")
     );
-    setSelectedDay(day);
-    const defaultStart = day.hour(hour).minute(0).toDate();
-    const defaultFinish = day
-      .hour(hour + 1)
-      .minute(0)
-      .toDate();
-    setStartTime(defaultStart);
-    setFinishTime(defaultFinish);
-    setRecordName("");
-    setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
-    setModalVisible(true);
-  };
+  }, []);
 
-  const handleSaveRecord = async () => {
+  // OPTIMIZED: Memoize record creation handler
+  const handleCreateRecord = useCallback(
+    (day: dayjs.Dayjs, hour: number) => {
+      console.log(
+        "Creating record for:",
+        day.format("YYYY-MM-DD"),
+        "at hour:",
+        hour
+      );
+      setSelectedDay(day);
+      const defaultStart = day.hour(hour).minute(0).toDate();
+      const defaultFinish = day
+        .hour(hour + 1)
+        .minute(0)
+        .toDate();
+      setStartTime(defaultStart);
+      setFinishTime(defaultFinish);
+      setRecordName("");
+      setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
+      setModalVisible(true);
+    },
+    [categories]
+  );
+
+  // OPTIMIZED: Memoize save record handler
+  const handleSaveRecord = useCallback(async () => {
     console.log("Saving record:", {
       selectedDay,
       minutes,
@@ -157,22 +163,25 @@ export default function WeekScreen() {
       .millisecond(0)
       .valueOf();
 
-    try {
-      console.log("Inserting record with timestamp:", ts);
-      await insertRecord({
-        categoryId: selectedCategoryId,
-        description: recordName.trim(),
-        minutes: mins,
-        timestamp: ts,
-      });
-      resetModalForm();
-      loadRecords();
-    } catch (e) {
-      console.error("insertRecord", e);
-    }
-  };
+    console.log("Inserting record with timestamp:", ts);
+    insertRecordMutation.mutate({
+      categoryId: selectedCategoryId,
+      description: recordName.trim(),
+      minutes: mins,
+      timestamp: ts,
+    });
+    resetModalForm();
+  }, [
+    selectedDay,
+    minutes,
+    recordName,
+    selectedCategoryId,
+    startTime,
+    insertRecordMutation,
+  ]);
 
-  const handleEditRecord = (record: RecordItem) => {
+  // OPTIMIZED: Memoize edit record handler
+  const handleEditRecord = useCallback((record: RecordItem) => {
     console.log("Editing record:", record);
     setEditingRecord(record);
     setRecordName(record.description);
@@ -183,9 +192,10 @@ export default function WeekScreen() {
     setMinutes(record.minutes.toString());
     setShowEditCategoryPicker(false);
     setEditModalVisible(true);
-  };
+  }, []);
 
-  const handleUpdateRecord = async () => {
+  // OPTIMIZED: Memoize update record handler
+  const handleUpdateRecord = useCallback(async () => {
     console.log("Updating record:", editingRecord?.id);
     if (!editingRecord) return;
 
@@ -200,35 +210,34 @@ export default function WeekScreen() {
       .millisecond(0)
       .valueOf();
 
-    try {
-      await updateRecord(
-        editingRecord.id,
-        selectedCategoryId,
-        recordName.trim(),
-        mins,
-        ts
-      );
-      resetEditForm();
-      loadRecords();
-    } catch (e) {
-      console.error("updateRecord", e);
-    }
-  };
+    updateRecordMutation.mutate({
+      id: editingRecord.id,
+      categoryId: selectedCategoryId,
+      description: recordName.trim(),
+      minutes: mins,
+      timestamp: ts,
+    });
+    resetEditForm();
+  }, [
+    editingRecord,
+    minutes,
+    startTime,
+    selectedCategoryId,
+    recordName,
+    updateRecordMutation,
+  ]);
 
-  const handleDeleteRecord = async () => {
+  // OPTIMIZED: Memoize delete record handler
+  const handleDeleteRecord = useCallback(() => {
     console.log("Deleting record:", editingRecord?.id);
     if (!editingRecord) return;
 
-    try {
-      await deleteRecord(editingRecord.id);
-      resetEditForm();
-      loadRecords();
-    } catch (e) {
-      console.error("deleteRecord", e);
-    }
-  };
+    deleteRecordMutation.mutate(editingRecord.id);
+    resetEditForm();
+  }, [editingRecord, deleteRecordMutation]);
 
-  const resetModalForm = () => {
+  // OPTIMIZED: Memoize modal form reset
+  const resetModalForm = useCallback(() => {
     setRecordName("");
     setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
     setMinutes("");
@@ -237,9 +246,10 @@ export default function WeekScreen() {
     setSelectedDay(null);
     setShowCategoryPicker(false);
     setModalVisible(false);
-  };
+  }, [categories]);
 
-  const resetEditForm = () => {
+  // OPTIMIZED: Memoize edit form reset
+  const resetEditForm = useCallback(() => {
     setEditingRecord(null);
     setRecordName("");
     setSelectedCategoryId(categories.length > 0 ? categories[0].id : null);
@@ -250,11 +260,57 @@ export default function WeekScreen() {
     setShowEditFinishPicker(false);
     setShowEditCategoryPicker(false);
     setEditModalVisible(false);
-  };
+  }, [categories]);
 
-  const weekDays = Array.from({ length: 7 }, (_, i) =>
-    currentWeek.add(i, "day")
-  );
+  // Memoize week days generation
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => currentWeek.add(i, "day"));
+  }, [currentWeek]);
+
+  // Memoize hour grid generation for performance
+  const hourGrid = useMemo(() => {
+    const hourLabels = generateHourLabels();
+    return hourLabels.map(
+      ({ hour, label }: { hour: number; label: string }) => (
+        <View key={hour} style={[styles.timeSlot, { height: HOUR_HEIGHT }]}>
+          <Text style={styles.timeLabel}>{label}</Text>
+        </View>
+      )
+    );
+  }, []);
+
+  // Memoize current time position
+  const currentTimePosition = useMemo(() => {
+    return getCurrentTimePosition(currentTime);
+  }, [currentTime]);
+
+  // Memoize records grouped by day for performance
+  const recordsByDay = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+    records.forEach((record: any) => {
+      const dayKey = dayjs(record.timestamp).format("YYYY-MM-DD");
+      if (!grouped.has(dayKey)) {
+        grouped.set(dayKey, []);
+      }
+
+      const { top, height } = getRecordPosition(
+        record.timestamp,
+        record.minutes
+      );
+      const category = categories.find((c: any) => c.id === record.categoryId);
+      const baseColor = category?.colorHex || "#a0c4ff";
+      const categoryColor = hexToRgba(baseColor, 0.5);
+
+      grouped.get(dayKey)!.push({
+        ...record,
+        top,
+        height,
+        category,
+        categoryColor,
+      });
+    });
+    return grouped;
+  }, [records, categories]);
 
   return (
     <View style={styles.container}>
@@ -287,19 +343,8 @@ export default function WeekScreen() {
           <View style={styles.weekContentWrapper}>
             {/* Time and Days Content Row */}
             <View style={styles.contentRow}>
-              {/* Fixed Time Column - scrolls vertically but not horizontally */}
-              <View style={styles.fixedTimeColumn}>
-                {Array.from({ length: 24 }).map((_, hour) => (
-                  <View
-                    key={hour}
-                    style={[styles.timeSlot, { height: HOUR_HEIGHT }]}
-                  >
-                    <Text style={styles.timeLabel}>
-                      {String(hour).padStart(2, "0")}:00
-                    </Text>
-                  </View>
-                ))}
-              </View>
+              {/* Fixed Time Column - memoized for performance */}
+              <View style={styles.fixedTimeColumn}>{hourGrid}</View>
 
               {/* Horizontally scrollable day columns with headers */}
               <ScrollView
@@ -308,14 +353,10 @@ export default function WeekScreen() {
               >
                 <View style={styles.daysContentWithHeaders}>
                   {/* Each day as a complete column with header and content */}
-                  {weekDays.map((day, dayIndex) => {
-                    const dayRecords = records.filter(
-                      (record) =>
-                        dayjs(record.timestamp).format("YYYY-MM-DD") ===
-                        day.format("YYYY-MM-DD")
-                    );
-                    const isToday =
-                      day.format("YYYY-MM-DD") === dayjs().format("YYYY-MM-DD");
+                  {weekDays.map((day: any, dayIndex: any) => {
+                    const dayKey = day.format("YYYY-MM-DD");
+                    const dayRecords = recordsByDay.get(dayKey) || [];
+                    const isToday = dayKey === dayjs().format("YYYY-MM-DD");
 
                     return (
                       <View key={dayIndex} style={styles.completeDayColumn}>
@@ -357,69 +398,43 @@ export default function WeekScreen() {
                             </Pressable>
                           ))}
 
-                          {/* Current time indicator for today */}
-                          {isToday &&
-                            (() => {
-                              const now = dayjs();
-                              const currentTop =
-                                (now.hour() * 60 + now.minute()) *
-                                MINUTE_HEIGHT;
-                              return (
-                                <View
-                                  style={[
-                                    styles.currentTimeLine,
-                                    { top: currentTop },
-                                  ]}
-                                >
-                                  <View style={styles.currentTimeIndicator} />
-                                </View>
-                              );
-                            })()}
+                          {/* Memoized current time indicator for today */}
+                          {isToday && (
+                            <View
+                              style={[
+                                styles.currentTimeLine,
+                                { top: currentTimePosition },
+                              ]}
+                            >
+                              <View style={styles.currentTimeIndicator} />
+                            </View>
+                          )}
 
-                          {/* Records */}
-                          {dayRecords.map((record) => {
-                            const recordTime = dayjs(record.timestamp);
-                            const top =
-                              (recordTime.hour() * 60 + recordTime.minute()) *
-                              MINUTE_HEIGHT;
-                            const height = record.minutes * MINUTE_HEIGHT;
-                            const category = categories.find(
-                              (c) => c.id === record.categoryId
-                            );
-                            const baseColor = category?.colorHex || "#a0c4ff";
-                            // Convert hex to rgba with 50% opacity
-                            const hexToRgba = (
-                              hex: string,
-                              opacity: number
-                            ) => {
-                              const r = parseInt(hex.slice(1, 3), 16);
-                              const g = parseInt(hex.slice(3, 5), 16);
-                              const b = parseInt(hex.slice(5, 7), 16);
-                              return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-                            };
-                            const categoryColor = hexToRgba(baseColor, 0.5);
-
+                          {/* Memoized Records with pre-calculated positions */}
+                          {dayRecords.map((recordData: any) => {
+                            const recordTime = dayjs(recordData.timestamp);
                             return (
                               <Pressable
-                                key={record.id}
+                                key={recordData.id}
                                 style={[
                                   styles.recordBlock,
                                   {
-                                    top,
-                                    height: Math.max(height, 20),
-                                    backgroundColor: categoryColor,
+                                    top: recordData.top,
+                                    height: Math.max(recordData.height, 20),
+                                    backgroundColor: recordData.categoryColor,
                                   },
                                 ]}
-                                onPress={() => handleEditRecord(record)}
+                                onPress={() => handleEditRecord(recordData)}
                               >
                                 <Text
                                   style={styles.recordTitle}
                                   numberOfLines={2}
                                 >
-                                  {record.description}
+                                  {recordData.description}
                                 </Text>
                                 <Text style={styles.recordTime}>
-                                  {recordTime.format("HH:mm")} ({record.minutes}
+                                  {recordTime.format("HH:mm")} (
+                                  {recordData.minutes}
                                   m)
                                 </Text>
                               </Pressable>
@@ -455,14 +470,14 @@ export default function WeekScreen() {
             >
               <Text style={styles.categoryButtonText}>
                 Category:{" "}
-                {categories.find((c) => c.id === selectedCategoryId)?.name ||
-                  "Select category"}
+                {categories.find((c: Category) => c.id === selectedCategoryId)
+                  ?.name || "Select category"}
               </Text>
             </Pressable>
 
             {showCategoryPicker && (
               <View style={styles.categoryPicker}>
-                {categories.map((category) => (
+                {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
                     style={[
@@ -559,14 +574,14 @@ export default function WeekScreen() {
             >
               <Text style={styles.categoryButtonText}>
                 Category:{" "}
-                {categories.find((c) => c.id === selectedCategoryId)?.name ||
-                  "Select category"}
+                {categories.find((c: Category) => c.id === selectedCategoryId)
+                  ?.name || "Select category"}
               </Text>
             </Pressable>
 
             {showEditCategoryPicker && (
               <View style={styles.categoryPicker}>
-                {categories.map((category) => (
+                {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
                     style={[
