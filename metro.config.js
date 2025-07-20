@@ -28,10 +28,4 @@ config.resolver = {
   platforms: ["ios", "android", "native", "web"],
 };
 
-// Enable Hermes-specific optimizations
-config.serializer = {
-  ...config.serializer,
-  customSerializer: require("metro/src/DeltaBundler/Serializers/baseJSBundle"),
-};
-
 module.exports = config;

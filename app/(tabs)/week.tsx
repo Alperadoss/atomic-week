@@ -6,8 +6,10 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -34,6 +36,10 @@ import {
   HOUR_HEIGHT,
   TIMELINE_HEIGHT,
 } from "../../src/utils/timelineUtils";
+
+// Safe-area height for Android status bar
+const STATUS_BAR_HEIGHT =
+  Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
 
 dayjs.extend(isoWeek);
 const DAY_WIDTH = 120; // Width of each day column
@@ -194,13 +200,6 @@ export default function WeekScreen() {
 
   // OPTIMIZED: Use custom hook for time calculations
   useTimeCalculation(startTime, finishTime, setMinutesCallback);
-
-  // OPTIMIZED: Memoize navigation function
-  const navigateWeek = useCallback((direction: "prev" | "next") => {
-    setCurrentWeek((prev) =>
-      direction === "prev" ? prev.subtract(1, "week") : prev.add(1, "week")
-    );
-  }, []);
 
   // OPTIMIZED: Memoize record creation handler
   const handleCreateRecord = useCallback(
@@ -425,6 +424,13 @@ export default function WeekScreen() {
     }),
     []
   );
+
+  // OPTIMIZED: Memoize navigation function
+  const navigateWeek = useCallback((direction: "prev" | "next") => {
+    setCurrentWeek((prev) =>
+      direction === "prev" ? prev.subtract(1, "week") : prev.add(1, "week")
+    );
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -700,7 +706,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    paddingTop: 2 + STATUS_BAR_HEIGHT,
     backgroundColor: "#304A9D",
   },
   navButton: {

@@ -5,8 +5,10 @@ import dayjs from "dayjs";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -48,6 +50,10 @@ export type Category = {
   colorHex: string | null;
   createdAt: number;
 };
+
+// Safe-area height for Android status bar
+const STATUS_BAR_HEIGHT =
+  Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
 
 export default function TodayScreen() {
   // React Query hooks for data fetching with caching
@@ -630,7 +636,12 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { padding: 16, backgroundColor: "#304A9D" },
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    paddingTop: 2 + STATUS_BAR_HEIGHT,
+    backgroundColor: "#304A9D",
+  },
   headerText: { color: "white", fontSize: 18, fontWeight: "bold" },
 
   hourRow: {

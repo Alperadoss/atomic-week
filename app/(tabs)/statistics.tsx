@@ -1,10 +1,22 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
-import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { useWeekStatistics } from "../../src/hooks/useDatabase";
+
+// Safe-area height for Android status bar
+const STATUS_BAR_HEIGHT =
+  Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
 
 dayjs.extend(isoWeek);
 
@@ -29,6 +41,38 @@ type CategoryStat = {
   totalHours: string;
   recordCount: number;
   percentage: number;
+};
+
+interface StatisticsHeaderProps {
+  currentWeek: dayjs.Dayjs;
+  setCurrentWeek: React.Dispatch<React.SetStateAction<dayjs.Dayjs>>;
+}
+const StatisticsHeader = ({
+  currentWeek,
+  setCurrentWeek,
+}: StatisticsHeaderProps) => {
+  const navigatePrev = useCallback(() => {
+    setCurrentWeek((prev: dayjs.Dayjs) => prev.subtract(1, "week"));
+  }, [setCurrentWeek]);
+
+  const navigateNext = useCallback(() => {
+    setCurrentWeek((prev: dayjs.Dayjs) => prev.add(1, "week"));
+  }, [setCurrentWeek]);
+
+  return (
+    <View style={styles.header}>
+      <Pressable style={styles.navButton} onPress={navigatePrev}>
+        <MaterialIcons name="chevron-left" size={24} color="white" />
+      </Pressable>
+      <Text style={styles.headerText}>
+        Week of {currentWeek.format("MMM D")} -{" "}
+        {currentWeek.add(6, "day").format("MMM D")}
+      </Text>
+      <Pressable style={styles.navButton} onPress={navigateNext}>
+        <MaterialIcons name="chevron-right" size={24} color="white" />
+      </Pressable>
+    </View>
+  );
 };
 
 export default function StatisticsScreen() {
@@ -126,13 +170,6 @@ export default function StatisticsScreen() {
     return { categoryStats: stats, totalWeekMinutes: totalMinutes };
   }, [data]);
 
-  // OPTIMIZED: Memoize navigation function
-  const navigateWeek = (direction: "prev" | "next") => {
-    setCurrentWeek((prev) =>
-      direction === "prev" ? prev.subtract(1, "week") : prev.add(1, "week")
-    );
-  };
-
   // OPTIMIZED: Memoize render function for better performance
   const renderCategoryStat = (stat: CategoryStat) => (
     <View key={stat.category.id} style={styles.statCard}>
@@ -179,26 +216,10 @@ export default function StatisticsScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Pressable
-            style={styles.navButton}
-            onPress={() => navigateWeek("prev")}
-          >
-            <MaterialIcons name="chevron-left" size={24} color="white" />
-          </Pressable>
-
-          <Text style={styles.headerText}>
-            Week of {currentWeek.format("MMM D")} -{" "}
-            {currentWeek.add(6, "day").format("MMM D")}
-          </Text>
-
-          <Pressable
-            style={styles.navButton}
-            onPress={() => navigateWeek("next")}
-          >
-            <MaterialIcons name="chevron-right" size={24} color="white" />
-          </Pressable>
-        </View>
+        <StatisticsHeader
+          currentWeek={currentWeek}
+          setCurrentWeek={setCurrentWeek}
+        />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading statistics...</Text>
         </View>
@@ -210,26 +231,10 @@ export default function StatisticsScreen() {
   if (error) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Pressable
-            style={styles.navButton}
-            onPress={() => navigateWeek("prev")}
-          >
-            <MaterialIcons name="chevron-left" size={24} color="white" />
-          </Pressable>
-
-          <Text style={styles.headerText}>
-            Week of {currentWeek.format("MMM D")} -{" "}
-            {currentWeek.add(6, "day").format("MMM D")}
-          </Text>
-
-          <Pressable
-            style={styles.navButton}
-            onPress={() => navigateWeek("next")}
-          >
-            <MaterialIcons name="chevron-right" size={24} color="white" />
-          </Pressable>
-        </View>
+        <StatisticsHeader
+          currentWeek={currentWeek}
+          setCurrentWeek={setCurrentWeek}
+        />
         <View style={styles.loadingContainer}>
           <Text style={styles.errorText}>Error loading statistics</Text>
         </View>
@@ -240,26 +245,10 @@ export default function StatisticsScreen() {
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          style={styles.navButton}
-          onPress={() => navigateWeek("prev")}
-        >
-          <MaterialIcons name="chevron-left" size={24} color="white" />
-        </Pressable>
-
-        <Text style={styles.headerText}>
-          Week of {currentWeek.format("MMM D")} -{" "}
-          {currentWeek.add(6, "day").format("MMM D")}
-        </Text>
-
-        <Pressable
-          style={styles.navButton}
-          onPress={() => navigateWeek("next")}
-        >
-          <MaterialIcons name="chevron-right" size={24} color="white" />
-        </Pressable>
-      </View>
+      <StatisticsHeader
+        currentWeek={currentWeek}
+        setCurrentWeek={setCurrentWeek}
+      />
 
       {/* Week Summary */}
       <View style={styles.summaryCard}>
@@ -295,7 +284,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    paddingTop: 6 + STATUS_BAR_HEIGHT,
     backgroundColor: "#304A9D",
   },
   navButton: {

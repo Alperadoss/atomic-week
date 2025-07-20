@@ -4,7 +4,9 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +18,10 @@ import {
   insertCategory,
   updateCategory,
 } from "../../src/db";
+
+// Safe-area height for Android status bar
+const STATUS_BAR_HEIGHT =
+  Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
 
 type Category = {
   id: number;
@@ -152,12 +158,16 @@ export default function SettingsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerText}>Categories</Text>
+        <Text style={styles.headerText}>Settings</Text>
+      </View>
+
+      <View style={styles.subHeader}>
+        <Text style={styles.subHeaderText}>Categories</Text>
         <Pressable
           style={styles.addButton}
           onPress={() => setModalVisible(true)}
         >
-          <MaterialIcons name="add" size={24} color="white" />
+          <MaterialIcons name="add" size={24} color="#304A9D" />
         </Pressable>
       </View>
 
@@ -231,9 +241,11 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    paddingTop: 2 + STATUS_BAR_HEIGHT,
     backgroundColor: "#304A9D",
   },
   headerText: {
@@ -241,8 +253,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+  subHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#f8f9fa",
+    borderBottomWidth: 1,
+    borderBottomColor: "#dee2e6",
+  },
+  subHeaderText: {
+    color: "#495057",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   addButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(48, 74, 157, 0.1)",
     width: 40,
     height: 40,
     borderRadius: 20,
