@@ -424,7 +424,10 @@ export default function TodayScreen() {
             </Pressable>
 
             {showCategoryPicker && (
-              <View style={styles.categoryPicker}>
+              <ScrollView
+                style={styles.categoryPicker}
+                nestedScrollEnabled={true}
+              >
                 {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
@@ -442,7 +445,7 @@ export default function TodayScreen() {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             <View style={styles.minutesContainer}>
@@ -547,7 +550,10 @@ export default function TodayScreen() {
             </Pressable>
 
             {showCategoryPicker && (
-              <View style={styles.categoryPicker}>
+              <ScrollView
+                style={styles.categoryPicker}
+                nestedScrollEnabled={true}
+              >
                 {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
@@ -565,7 +571,7 @@ export default function TodayScreen() {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             <View style={styles.minutesContainer}>

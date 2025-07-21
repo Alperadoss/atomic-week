@@ -508,7 +508,10 @@ export default function WeekScreen() {
             </Pressable>
 
             {showCategoryPicker && (
-              <View style={styles.categoryPicker}>
+              <ScrollView
+                style={styles.categoryPicker}
+                nestedScrollEnabled={true}
+              >
                 {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
@@ -526,7 +529,7 @@ export default function WeekScreen() {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             <View style={styles.minutesContainer}>
@@ -612,7 +615,10 @@ export default function WeekScreen() {
             </Pressable>
 
             {showEditCategoryPicker && (
-              <View style={styles.categoryPicker}>
+              <ScrollView
+                style={styles.categoryPicker}
+                nestedScrollEnabled={true}
+              >
                 {categories.map((category: Category) => (
                   <Pressable
                     key={category.id}
@@ -630,7 +636,7 @@ export default function WeekScreen() {
                     </Text>
                   </Pressable>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             <View style={styles.minutesContainer}>
