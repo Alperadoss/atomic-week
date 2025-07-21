@@ -43,7 +43,7 @@
 2. **Generate native Android code**
 
    ```bash
-   npx expo prebuild --platform android --clean
+   npx expo prebuild --platform android
    ```
 
 3. **Build optimized APK**
