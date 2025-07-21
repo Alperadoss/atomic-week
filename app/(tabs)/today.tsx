@@ -75,6 +75,7 @@ export default function TodayScreen() {
     null
   );
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showEditCategoryPicker, setShowEditCategoryPicker] = useState(false);
   const [minutes, setMinutes] = useState("");
   const [startTime, setStartTime] = useState<Date>(new Date());
   const [finishTime, setFinishTime] = useState<Date>(
@@ -147,6 +148,7 @@ export default function TodayScreen() {
     setMinutes("");
     setStartTime(new Date());
     setFinishTime(new Date(Date.now() + 60 * 60 * 1000));
+    setShowCategoryPicker(false);
     setModalVisible(false);
   }, [categories]);
 
@@ -160,6 +162,7 @@ export default function TodayScreen() {
     setFinishTime(new Date(Date.now() + 60 * 60 * 1000));
     setShowEditStartPicker(false);
     setShowEditFinishPicker(false);
+    setShowEditCategoryPicker(false);
     setEditModalVisible(false);
   }, [categories]);
 
@@ -539,7 +542,7 @@ export default function TodayScreen() {
             />
 
             <Pressable
-              onPress={() => setShowCategoryPicker(true)}
+              onPress={() => setShowEditCategoryPicker(true)}
               style={styles.categoryButton}
             >
               <Text style={styles.categoryButtonText}>
@@ -549,7 +552,7 @@ export default function TodayScreen() {
               </Text>
             </Pressable>
 
-            {showCategoryPicker && (
+            {showEditCategoryPicker && (
               <ScrollView
                 style={styles.categoryPicker}
                 nestedScrollEnabled={true}
@@ -563,7 +566,7 @@ export default function TodayScreen() {
                     ]}
                     onPress={() => {
                       setSelectedCategoryId(category.id);
-                      setShowCategoryPicker(false);
+                      setShowEditCategoryPicker(false);
                     }}
                   >
                     <Text style={styles.categoryOptionText}>
@@ -726,6 +729,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 12,
     padding: 16,
+    maxHeight: "80%",
   },
   modalTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 12 },
   input: {
@@ -872,11 +876,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0f0f0",
     borderRadius: 6,
     marginBottom: 12,
-    maxHeight: 150, // Limit height for picker
+    maxHeight: 120, // Match week.tsx
     overflow: "hidden",
   },
   categoryOption: {
-    paddingVertical: 10,
+    paddingVertical: 8, // Match week.tsx
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#ccc",
